@@ -1,0 +1,184 @@
+---
+title: "Agbalumo"
+output:
+  pdf_document: default
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r loadpackages, message=FALSE}
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+library(magrittr)
+library(car)
+library(corrplot)
+library(GGally)
+```
+
+
+```{r read data}
+sd <- read_xlsx('chyrs.xlsx', sheet=2, col_names = TRUE)
+head(sd)
+str(sd)
+```
+
+
+```{r}
+sd$location <- as.factor(sd$location)
+any(is.na(sd))
+sd[-1] %>% summary(sd)
+```
+
+
+Univirate Analysis of the seed data
+
+1) Seed Length
+
+```{r}
+
+ggplot(data=sd,aes(x=sdlgt))+geom_histogram(bins=20)+ ggtitle("Histogram of Seed Length") 
+
+ggplot(data=sd,aes(x=sdlgt))+geom_histogram(bins=15)+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Seed Length By Location") 
+
+ggplot(data=sd,aes(x=location,y=sdlgt))+geom_boxplot()+ ggtitle("Boxplot of Seed Length") 
+
+ggplot(data=sd,aes(sample=sdlgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+
+```
+
+
+
+2) Seed Weight
+```{r}
+ggplot(data=sd,aes(x=sdwth))+geom_histogram(bins=20)+ ggtitle("Histogram of Seed Weight") 
+ggplot(data=sd,aes(x=sdwth))+geom_histogram(bins=15)+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Seed Weight By Location") 
+ggplot(data=sd,aes(x=location,y=sdwth))+geom_boxplot()+ ggtitle("Boxplot of Seed Width")
+ggplot(data=sd,aes(sample=sdwth)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+```
+
+
+
+3) Cortiledon Length
+```{r}
+ggplot(data=sd,aes(x=colgt))+geom_histogram(bins=20)+ ggtitle("Histogram of Cortiledon Length")
+ggplot(data=sd,aes(x=colgt))+geom_histogram(bins=15)+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Cortiledon Length By Location") 
+ggplot(data=sd,aes(x=location,y=colgt))+geom_boxplot()+ ggtitle("Boxplot of Cortiledon Length") 
+ggplot(data=sd,aes(sample=colgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+```
+locations 2,3, 4 and 5 appear to have distributions that are 
+
+4) Cotiledon Weight
+```{r}
+ggplot(data=sd,aes(x=cowt))+geom_histogram()+ ggtitle("Histogram of Cortiledon Weight") 
+ggplot(data=sd,aes(x=cowt))+geom_histogram(bins=15)+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Cortiledon By Location") 
+#Box plot of seeds
+ggplot(data=sd,aes(x=location,y=cowt))+geom_boxplot()+ ggtitle("Boxplot of Cotiledon Width") 
+ggplot(data=sd,aes(sample=cowt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+
+```
+
+
+
+Scatterplot Matrix of Seed Attributes
+
+```{r}
+sd[-1] %>% scatterplotMatrix(regLine = FALSE,smooth = FALSE)
+title(main="Scatterplot Matrix of Seed Attributes")
+
+sd[-1] %>% scatterplotMatrix(regLine = FALSE,smooth = FALSE,groups=sd$location)
+title(main="Scatterplot Matrix of Seed Attributes By Location")
+
+corrplot(cor(sd[-1]), type="upper")
+
+cor(sd[-1])
+table(sd$location)
+```
+
+The scatterplot of the seeds by location appear to show the values all bunched together with little seperability
+
+
+```{r}
+aggregate(.~location,sd,mean)
+aggregate(.~location,sd,var)
+```
+
+
+Seed length and cotiledon length are strongly positively correlated, about 81% ov variation in seed length can be explained by cotiledon length and vice versa . Other attributes have week positive correlation. 
+
+
+Things to do
+use manova to test to see if there is a difference of means between locations for the seeds
+carry out a cluster analysis
+
+1. Test For Normality
+Univirate test
+```{r}
+byf.shapiro(sdlgt~location,  data=sd) 
+byf.shapiro(sdwth~location, data=sd) 
+byf.shapiro(colgt~location, data=sd) 
+byf.shapiro(cowt~location, data=sd)
+```
+at pvalue of 0.05 all characteristics except cowt are normal or approximately so.
+
+Normlize cowt
+Box-Cox transformation
+```{r}
+lapply(sd["cowt"],powerTransform) 
+```
+
+
+```{r}
+sd["pcowt"] <- bcPower(sd$cowt,0.406783) %>% scale() 
+byf.shapiro(pcowt~location, data=sd)
+```
+
+```{r}
+sd["lcowt"] <- log(sd["cowt"]) %>% scale() 
+byf.shapiro(lcowt~location,data=sd)
+```
+
+Drop the extreme variables of cowt in location 3 and 4 and check normality
+```{r}
+cowt_out <- boxplot(sd$cowt~sd$location, plot=FALSE)$out
+sd <- sd[-which(sd$cowt %in% cowt_out),]
+byf.shapiro(cowt~location,data=sd)
+```
+
+
+Multivirate test
+```{r}
+sd[-1] %>% t() %>% mshapiro.test()
+```
+
+```{r}
+aq.plot(sd[-1])
+```
+
+2. Testing Positive determinant of variance-covariance matrix
+```{r}
+sd[-1] %>% cov() %>% det()
+```
+
+
+3.Homogeniety of variance (homoscedacity)
+LeveneTest. 
+```{r}
+leveneTest(sdlgt~location, data=sd)
+leveneTest(sdwth~location, data=sd)
+leveneTest(colgt~location, data=sd)
+leveneTest(cowt~location, data=sd)
+```
+
+
+Test equality of variance covariance matrix
+```{r}
+#install.packages("biotools")
+library(biotools)
+#x <- cbind(ft$fwgt,ft$flgt,ft$fdiam,ft$seedno)
+#g <- ft$location
+boxM(x,g)
+```
+

@@ -1,0 +1,404 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+---
+
+```{r install a}
+list.of.packages <- c("tidyverse","ggplot2","readr","lubridate","leaflet","lattice","data.table","sqldf","RColorBrewer","scales","car","RVAideMemoire","mvShapiroTest","biotools","npmv","nnet","mlogit","pscl","boot")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages))install.packages(new.packages)
+
+```
+
+```{r message=FALSE}
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+library(magrittr)
+library(car)
+library(corrplot)
+library(RVAideMemoire)
+library(mvShapiroTest)
+library(mvnormtest)
+library(npmv)
+library(pscl)
+library(boot)
+library(biotools)
+library(MASS)
+```
+
+Read in the data
+```{r}
+ft <- read_xlsx('chyrs.xlsx', sheet=3, col_names = TRUE)
+head(ft)
+```
+
+Data Cleanup
+```{r}
+ft$location <- as.factor(ft$location)
+ft[c("fwgt","flgt","fdiam")] <- lapply(ft[c("fwgt","flgt","fdiam")],as.double)
+ft[c("seedno","lavano")] <- lapply(ft[c("seedno","lavano")],as.integer)
+print(str(ft))
+print(any(is.na(ft)))
+```
+
+
+```{r}
+#remove record with na
+ft <- na.omit(ft)
+summary(ft)
+```
+
+
+Univirate analysis of the seed data
+
+1) Fruit Length
+```{r}
+ggplot(data=ft,aes(x=flgt))+geom_histogram()+ ggtitle("Histogram of Fruit Length") 
+
+ggplot(data=ft,aes(x=flgt))+geom_histogram(bins=15)+geom_freqpoly()+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Fruit Length By Location") 
+
+ggplot(data=ft,aes(x=flgt))+geom_freqpoly(bins=15)+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Fruit Length By Location")
+
+ggplot(data=ft,aes(x=location,y=flgt))+geom_boxplot()+ ggtitle("Boxplot of Fruit Length") 
+
+ggplot(data=ft,aes(sample=flgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Length By Location")
+
+```
+distributions of locations 1,3,4 and 5 appear non normal. Data from location 1 is skewed and data from location 3 has extreme values
+
+
+2) Fruit Width
+```{r}
+ggplot(data=ft,aes(x=fwgt))+geom_histogram(bins=20)+ ggtitle("Histogram of Fruit Weight") 
+ggplot(data=ft,aes(x=fwgt))+geom_histogram(bins=15)+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Fruit Weight By Location") 
+
+ggplot(data=ft,aes(x=fwgt))+geom_freqpoly(bins=15)+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Fruit Weight By Location")
+
+ggplot(data=ft,aes(x=location,y=fwgt))+geom_boxplot()+ ggtitle("Boxplot of Fruit Weight") 
+
+ggplot(data=ft,aes(sample=fwgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+```
+locations 1, 2 and 5 appear to deviate from normality. location 1 and 2 might be skewed
+
+
+3) Fruit Diameter
+```{r}
+ggplot(data=ft,aes(x=fdiam))+geom_histogram(bins=20)+ ggtitle("Histogram of Fruit Diameter") 
+
+ggplot(data=ft,aes(x=fdiam))+geom_histogram(bins=15)+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Fruit Diameter By Location") 
+
+ggplot(data=ft,aes(x=fdiam))+geom_freqpoly(bins=15)+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Fruit Diameter By Location")
+
+ggplot(data=ft,aes(x=location,y=fdiam))+geom_boxplot()+ ggtitle("Boxplot of Fruit Diameter by Location")
+
+ggplot(data=ft,aes(sample=fdiam)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ggtitle("QQPlot For Fruit Diameter By Location")
+```
+location 5 has an obvious deviation from normality. 
+
+
+4) 
+Number of Seeds 
+Seeds variable is discrete data
+```{r}
+#use relative frequency since it can be a sudo for probability of the number of seeds occuring
+ggplot(data=ft,aes(x=seedno))+geom_bar()+ ggtitle("Histogram of Seed No") 
+ggplot(data=ft,aes(x=seedno))+geom_bar()+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Seed Number By Location") 
+```
+Discrete data will not follow the normal distribution
+
+
+Lava Summary - This is also discrete data 
+```{r}
+summary(ft$lavano)
+#Box plot of seeds
+ggplot(data=ft,aes(x=lavano))+geom_bar()+facet_wrap(~location,ncol=3) +ggtitle("Histogram of Seed Number By Location") 
+
+```
+Data has a lot of zeros because fruit should not have worms
+
+
+Multivirate Analysis of fruit data
+```{r}
+scatterplotMatrix(ft[-c(1,5,6)],regLine = FALSE,smooth = FALSE)
+title(main="Scatterplot Matrix of Fruit Attributes")
+
+scatterplotMatrix(ft[-c(1,5,6)],groups=ft$location, regLine = FALSE,smooth = FALSE)
+title(main="Scatterplot Matrix of Fruit Attributes, With Location Seperation By Color")
+
+```
+The plots with color show some attribute seperation based on color. Statistical tests will confirm if these differences are significant
+
+
+Perform the following tests:
+1. test if fruit characteristics are different based on location
+2. if lava count is different based on location
+
+
+
+ANOVA/MANOVA
+First ensure that data do not violate ANOVA assumptions, then check for MANOVA assumptions - will not include seedno because it is discrete data 
+
+
+Test For Anova Assumptions
+ANOVA is robust to deviations from assumptions but the ratio between sizes must be less than 1.5
+
+```{r}
+40/33
+```
+
+1.Homogeniety of variance (homoscedacity)
+List Variance of fruit characteristics
+```{r}
+aggregate(ft[-c(1,5,6)],by=ft[1],var,na.rm=TRUE)
+
+```
+
+variance for each variable is not similar, so cannot assume. Utilize Levene Test to statistically determine if variance is statistically the same or different accross locations
+
+LeveneTest. 
+```{r}
+leveneTest(fwgt~location, data=ft)
+leveneTest(flgt~location, data=ft)
+leveneTest(fdiam~location, data=ft)
+```
+Fail to reject the null, variance is smilar across locations
+
+
+Test Positive determinant of variance-covariance matrix
+```{r}
+ft[-c(1,5,6)] %>% cov() %>% det()
+```
+
+Test equality of variance covariance matrix
+```{r}
+x <- cbind(ft$fwgt,ft$flgt,ft$fdiam)
+g <- ft$location
+boxM(x,g)
+```
+
+reject null hypothesis, covariance matrices are not equal. Resolve normality and retest
+
+
+fruit diameter for location 1, 2, and 5 appear to not be normal, Fruit Weight for location 1, 2, 3 appear to not be normal and fruit length for locations 1 and 3 do not appear to be normal.
+
+Confirm with the Shapiro Wilk's test
+
+Shapiro-Wilk Test
+Univirate test
+```{r}
+byf.shapiro(flgt~location, data=ft) 
+byf.shapiro(fwgt~location, data=ft) 
+byf.shapiro(fdiam~location, data=ft) 
+```
+
+
+Utilize Log and BoxCox transformations, to normalize the data
+Log Transformation
+```{r}
+
+ft2 <- ft[c("location","fwgt","flgt","fdiam")]
+ft2["fwgt"] <- log(ft2$fwgt)
+ft2["flgt"] <- log(ft2$flgt)
+ft2["fdiam"] <- log(ft2$fdiam)
+
+byf.shapiro(flgt~location, data=ft2) 
+byf.shapiro(fwgt~location, data=ft2) 
+byf.shapiro(fdiam~location, data=ft2) 
+
+```
+
+qqplot of transformed variables
+```{r}
+ggplot(data=ft2,aes(sample=fwgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+
+ggplot(data=ft2,aes(sample=flgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+
+ggplot(data=ft2,aes(sample=fdiam)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+```
+Log transformation did not normalize the data
+
+
+Utilize BoxCox transformation
+Function to transform the variables using boxCox
+```{r}
+ft3 <- ft[c("location","fwgt","flgt","fdiam")]
+powerTransform(ft3$fwgt~ft3$location)
+powerTransform(ft3$flgt~ft3$location)
+powerTransform(ft3$fdiam~ft3$location)
+```
+
+
+```{r}
+ft3["fwgt"] <- bcPower(ft3$fwgt,0.2091424)
+ft3["flgt"] <- bcPower(ft3$flgt,-0.8350021)
+ft3["fdiam"] <- bcPower(ft3$fwgt,-0.5049158)
+
+byf.shapiro(fwgt~location, data=ft3)
+byf.shapiro(flgt~location, data=ft3)
+byf.shapiro(fdiam~location, data=ft3)
+```
+
+qqplot of transformed variables
+```{r}
+ggplot(data=ft3,aes(sample=fwgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+
+ggplot(data=ft3,aes(sample=flgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+
+ggplot(data=ft3,aes(sample=fdiam)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+```
+Box Cox also did not appear to have an impact 
+
+
+Remove extreme values and test again
+```{r}
+
+ft2 <- ft
+#identifiy extreme values
+fwgt_out <- boxplot(ft2$fwgt~ft2$location, plot=FALSE)$out
+flgt_out <- boxplot(ft2$flgt~ft2$location, plot=FALSE)$out
+fdiam_out <- boxplot(ft2$fdiam~ft2$location, plot=FALSE)$out
+
+#remove the observations
+ft2 <- ft2[-which(ft2$fwgt %in% fwgt_out),]
+ft2 <- ft2[-which(ft2$flgt %in% flgt_out),]
+ft2 <- ft2[-which(ft2$fdiam %in% fdiam_out),]
+
+ft3 <- ft2
+```
+
+
+test and qqplot of log transformed variables without extreme values
+```{r}
+
+ft2["fwgt"] <- log(ft2$fwgt)
+ft2["flgt"] <- log(ft2$flgt)
+ft2["fdiam"] <- log(ft2$fdiam)
+
+#qqplot of transformed variables
+byf.shapiro(fwgt~location, data=ft2)
+byf.shapiro(flgt~location, data=ft2)
+byf.shapiro(fdiam~location, data=ft2)
+
+#qqplots
+ggplot(data=ft2,aes(sample=fwgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+
+ggplot(data=ft2,aes(sample=flgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+
+ggplot(data=ft2,aes(sample=fdiam)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+```
+Deviations from normality are very evident. Utilize Box Cox transformation without extreme values
+
+
+BoxCox transformation
+```{r}
+powerTransform(ft3$fwgt~ft3$location)
+powerTransform(ft3$flgt~ft3$location)
+powerTransform(ft3$fdiam~ft3$location)
+```
+
+
+```{r}
+#boxcox transformation
+powerTransform(ft3$fwgt~ft3$location)
+powerTransform(ft3$flgt~ft3$location)
+powerTransform(ft3$fdiam~ft3$location)
+
+#qqplot of transformed variables
+byf.shapiro(fdiam~location, data=ft3) #1,2,5
+byf.shapiro(fwgt~location, data=ft3) #1, 2, 3
+byf.shapiro(flgt~location, data=ft3)
+
+#qqplots
+ggplot(data=ft3,aes(sample=fwgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+
+ggplot(data=ft3,aes(sample=flgt)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+
+ggplot(data=ft3,aes(sample=fdiam)) + geom_qq(distribution = stats::qnorm)+ stat_qq_line() + facet_wrap(~location)+ facet_wrap(~location)+ggtitle("QQPlot For Fruit Weight By Location")
+```
+
+Box Cox and Log transformations fail to normalize the data. Utilize One-Way Multivirate Non Parametric test and logistic regression
+
+
+One-Way Multivariate Non Parametric Test
+
+factors need to be equal,compare 2 sets of tests
+1) randomly remove values to make them equal 
+```{r}
+l1 <- ft[sample(which(ft$location==1), 33),]
+l2 <- ft[sample(which(ft$location==2), 33),]
+l3 <- ft[sample(which(ft$location==3), 33),]
+l4 <- ft[sample(which(ft$location==4), 33),]
+l5 <- ft[sample(which(ft$location==5), 33),]
+l6 <- ft[sample(which(ft$location==6), 33),]
+
+ft4 <- rbind(l1,l2,l3,l4,l5,l6)
+
+
+```
+
+Perform the multivariate non parametric test
+```{r}
+nonpartest(fdiam|fwgt|flgt|seedno~location,data=ft4)
+```
+fruits from group 5 tend to have larger characteristics
+
+```{r}
+ssnonpartest(seedno|fdiam|fwgt|flgt~location,data=ft4)
+```
+
+fruit characteristics differ by location:
+
+Alternative tests to carry out
+1. Mixture Modelling
+2. Bayesian Inference
+
+
+
+
+Test for difference in lava number based on location
+
+```{r}
+model4 <- glm(lavano~location,family=poisson(link="log"),data=ft)
+summary(model4)
+```
+
+```{r}
+#check regression fit
+#pchisq(model4$deviance, df=model4$df.residual, lower.tail=FALSE)
+
+par(mfrow = c(2,2))
+plot(model4)
+
+```
+
+
+```{r}
+#Poisson Regression for Seed No
+#ft["sqrtlv"] <- sqrt(ft$lavano)
+model2 <- glm.nb(lavano~location,data=ft)
+summary(model2)
+```
+lava count is not statistically different based on location
+
+
+```{r}
+par(mfrow = c(2,2))
+plot(model2)
+```
+
+
+
+
+
+
+```{r}
+#Poisson Regression for lavano No - data has a lot of zeros 
+#model3 <- zeroinfl(lavano~location,data=ft,dist = "negbin", EM = TRUE)
+#summary(model3)
+```
+
+```{r}
+```
+
