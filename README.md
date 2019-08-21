@@ -19,7 +19,7 @@ nonpartest(fdiam|fwgt|flgt|seedno~location,data=ft4)
 ```
 
 
-# Project Status
+## Project Status
 Incomplete. Tests for normality indicate that MANOVA will not be a good fit for analysis. I have utilized the multivirate Non-Parametric test available in R. To continue the following will be considered:
 * Other statistical distributions i.e Triangle distribtution
 * Bayesian Inference
